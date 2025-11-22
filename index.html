@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GasMap Prototype</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Load Mapbox GL JS -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
+
+    <style>
+        /* Custom CSS to ensure the map fills the container and screen */
+        #map {
+            width: 100%;
+            height: 80vh; /* 80% of viewport height for visualization */
+            border-radius: 0.75rem; /* rounded corners */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style for the custom User Marker (Blue Circle) */
+        .user-marker {
+            width: 24px;
+            height: 24px;
+            background-color: #3b82f6; /* Blue-500 */
+            border-radius: 50%;
+            border: 3px solid #ffffff;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5); /* Blue glow */
+            cursor: pointer;
+        }
+        /* Style for the Gas Station Marker (Red Circle with Price Snippet) */
+        .station-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            background-color: #ef4444; /* Red-500 */
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            font-size: 11px; /* Smaller font for price */
+            color: white;
+            font-weight: bold;
+            line-height: 1;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            cursor: pointer;
+            padding-top: 2px; /* Slight vertical adjustment */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 sm:p-8">
+
+    <!-- Application Container -->
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Map Implementation Sprint (Usman)</h1>
+            <p class="text-sm text-gray-500 mt-1">Next Step: Plotting Mock Gas Stations.</p>
+        </header>
+
+        <!-- Status Message Box -->
+        <div id="status-message" class="mb-6 p-3 bg-yellow-100 text-yellow-800 rounded-lg text-sm font-medium">
+            Attempting to find your location... (Please allow location access in your browser).
+        </div>
+
+        <!-- Map Container -->
+        <div id="map" class="shadow-lg">
+            <!-- The map will be rendered here -->
+        </div>
+        
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION ---
+        mapboxgl.accessToken = 'pk.eyJ1IjoidXNtYW5jaCIsImEiOiJjbWk5anZ5MTEwcGRpMmxwdjNpNTJmNWJkIn0.6TkjSZTrX_D4xgm1YRGPrg'; 
+
+        const initialCenter = [-83.0458, 42.3314]; // Default: Detroit, Michigan
+        const initialZoom = 12;
+
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: initialCenter, 
+            zoom: initialZoom, 
+            pitch: 45
+        });
+
+        // Mock data set simulating the API response from Krish's sprint
+        const mockGasStations = [
+            // Coordinates near the default Detroit center
+            { name: "QuickFuel Station A", price: 3.45, lng: -83.055, lat: 42.341, id: 1 },
+            { name: "BestValue Gas B", price: 3.29, lng: -83.035, lat: 42.321, id: 2 },
+            { name: "Premium Fuel C", price: 3.59, lng: -83.065, lat: 42.335, id: 3 }
+        ];
+
+        // --- 2. UTILITY FUNCTIONS ---
+        function updateStatus(message, type = 'yellow') {
+            const statusDiv = document.getElementById('status-message');
+            let className = 'mb-6 p-3 rounded-lg text-sm font-medium ';
+            
+            if (type === 'green') {
+                className += 'bg-green-100 text-green-800';
+            } else if (type === 'red') {
+                className += 'bg-red-100 text-red-800';
+            } else { 
+                className += 'bg-yellow-100 text-yellow-800';
+            }
+
+            statusDiv.className = className;
+            statusDiv.textContent = message;
+        }
+
+        // --- 3. PLOTTING FUNCTIONS ---
+        
+        // Plots the user's current location marker
+        function plotUserMarker(lngLat) {
+            const markerElement = document.createElement('div');
+            markerElement.className = 'user-marker';
+
+            new mapboxgl.Marker(markerElement)
+                .setLngLat(lngLat)
+                .setPopup(new mapboxgl.Popup({ offset: 25 })
+                    .setHTML("<h3>You Are Here</h3><p>Your current location.</p>"))
+                .addTo(map);
+        }
+
+        // Plots all the gas stations from the provided data
+        function plotGasStations(stations) {
+            let count = 0;
+            stations.forEach(station => {
+                const markerElement = document.createElement('div');
+                markerElement.className = 'station-marker';
+                
+                // Display the price (e.g., "45" for 3.45) on the marker
+                const cents = Math.round((station.price % 1) * 100);
+                markerElement.textContent = `.${cents}`; 
+
+                // Create detailed popup content
+                const popupContent = `
+                    <div class="p-1">
+                        <h4 class="font-bold text-gray-800">${station.name}</h4>
+                        <p class="text-xl text-red-600 font-extrabold">Price: $${station.price.toFixed(2)}</p>
+                        <p class="text-sm text-gray-500 mt-1">Ready for Dijkstra's input!</p>
+                    </div>
+                `;
+
+                new mapboxgl.Marker(markerElement)
+                    .setLngLat([station.lng, station.lat])
+                    .setPopup(new mapboxgl.Popup({ offset: 25 })
+                        .setHTML(popupContent))
+                    .addTo(map);
+                
+                count++;
+            });
+            return count;
+        }
+
+        // --- 4. MAIN LOCATION LOGIC ---
+        function getUserLocation() {
+            // Initial call to plot stations, using the mock data.
+            const plottedCount = plotGasStations(mockGasStations); 
+            let initialStatus = `Map Loaded. Plotted ${plottedCount} mock gas stations.`;
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const userLngLat = [position.coords.longitude, position.coords.latitude];
+                        
+                        map.setCenter(userLngLat);
+                        map.setZoom(14); 
+
+                        plotUserMarker(userLngLat); // Plot user marker
+                        
+                        updateStatus(`Successfully found your location and centered the map! (${plottedCount} stations plotted)`, 'green');
+                    },
+                    (error) => {
+                        // Handle Geolocation errors
+                        let errorMessage;
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = "Location access denied.";
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = "Location information is unavailable.";
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = "The request to get user location timed out.";
+                                break;
+                            default:
+                                errorMessage = "An unknown location error occurred.";
+                                break;
+                        }
+                        
+                        // User location could not be found, display default status
+                        updateStatus(`${initialStatus} ${errorMessage} Displaying default center (Detroit).`, 'red');
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                updateStatus(`${initialStatus} Geolocation is not supported by your browser.`, 'red');
+            }
+        }
+
+
+        // --- 5. INITIALIZATION ---
+        map.on('load', () => {
+            // Token is assumed to be correct since the user pasted it themselves.
+            getUserLocation();
+        });
+
+        // Error handler for Mapbox initialization failure
+        map.on('error', (e) => {
+             console.error('Map loading error:', e);
+             updateStatus('ERROR: Map experienced a loading issue. Check console for details.', 'red');
+        });
+    </script>
+</body>
+</html>
