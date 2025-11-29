@@ -1,0 +1,24 @@
+-----------------------------
+
+Dependency Directories
+
+-----------------------------
+
+/node_modules
+/dist
+/build
+/out
+
+-----------------------------
+
+Local Secrets & Environment Variables
+
+-----------------------------
+
+CRITICAL: NEVER COMMIT API KEYS OR SECRETS
+
+This prevents your API keys from being uploaded to GitHub/GitLab/etc.
+
+.env
+.env.*
+*.log

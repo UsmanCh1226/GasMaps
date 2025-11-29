@@ -3,12 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Route and POI Finder (API Key Free)</title>
+    <title>Leaflet Real Road Routing with GraphHopper</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load Leaflet CSS and JS (Open Source, No Key Required) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    
+    <!-- Leaflet CSS and JS (Core Map Library) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/SVRMgfkQRRI+5TvE="
+        crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20n6a958TTD08xU51Wp8r9S4b1CiG17g7rwh09hWkZJ1s="
+        crossorigin=""></script>
+
+    <!-- Leaflet Routing Machine CSS and JS (For Road Routing) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
     <style>
         /* Custom styles for 'Inter' font and map container */
@@ -20,99 +29,66 @@
             box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
         #map {
-            height: 50vh; 
-            min-height: 300px;
+            height: 60vh; 
+            min-height: 400px;
             width: 100%;
             border-radius: 0.5rem; 
-            z-index: 1; /* Ensure map is below popups */
+            z-index: 1; 
         }
-        .input-field {
-            transition: all 0.3s ease;
-        }
-        .input-field:focus {
-            outline: none;
-            border-color: #3b82f6; /* Blue-500 */
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+        /* Style for the Leaflet Routing Machine control */
+        .leaflet-routing-container {
+            font-family: 'Inter', sans-serif;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            padding: 1rem;
+            background-color: white;
         }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center p-4 sm:p-8">
     
     <div class="w-full max-w-4xl mt-4 bg-white rounded-xl p-6 sm:p-8 container-card">
-        <h1 class="text-3xl font-extrabold text-gray-900 mb-6 border-b pb-3">
-            Live Route Finder (Prototyping Mode)
+        <h1 class="text-3xl font-extrabold text-gray-900 mb-4 border-b pb-3">
+            Leaflet Routing with GraphHopper
         </h1>
-        <p class="text-orange-600 font-semibold mb-4 p-2 bg-orange-50 rounded-lg">
-            ⚠️ Using OpenStreetMap (No API Key). Search and Routing are simulated using straight-line distance and mock data.
+        <p class="text-red-700 font-semibold mb-6 p-2 bg-red-50 rounded-lg">
+            ⚠️ **ACTION REQUIRED:** You must replace `"YOUR_GRAPHHOPPER_API_KEY"` in the JavaScript code below with your actual free GraphHopper API key for the routing to work.
         </p>
         <p class="text-gray-600 mb-6">
-            Your current location is the starting point. Search for a destination to see mock nearby options and the simulated route.
+            We are finding your current location (Start). Use the control panel on the map to enter a Destination and calculate the driving route using GraphHopper's powerful service.
         </p>
 
-        <!-- Search Input -->
-        <div class="space-y-4 mb-6">
-            <div class="flex flex-col sm:flex-row gap-4">
-                <input 
-                    type="text" 
-                    id="searchQuery" 
-                    placeholder="Search for POIs, e.g., 'Dunkin Donuts' or 'Gas Station'" 
-                    class="input-field flex-grow px-4 py-2 border border-gray-300 rounded-lg text-gray-800"
-                >
-                <button 
-                    id="searchButton"
-                    class="py-2 px-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition duration-150 ease-in-out transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50"
-                >
-                    Find Places (Simulated)
-                </button>
-            </div>
-            <p id="startLocationDisplay" class="text-sm text-gray-500 italic">Finding your location...</p>
+        <!-- Map Container -->
+        <div id="map" class="mb-6"></div>
+
+        <!-- Status Message Area -->
+        <div id="statusMessage" class="p-3 rounded-lg text-sm bg-blue-100 text-blue-700" role="alert">
+            Initializing map and finding your location...
         </div>
-
-        <!-- Map Container and Sidebar for Results -->
-        <div class="flex flex-col lg:flex-row gap-6">
-            <!-- Map -->
-            <div id="map" class="lg:w-3/4"></div>
-
-            <!-- POI Results Sidebar -->
-            <div class="lg:w-1/4 max-h-[50vh] overflow-y-auto p-2 bg-gray-50 rounded-lg border border-gray-200">
-                <h2 class="text-lg font-semibold text-gray-800 mb-2 sticky top-0 bg-gray-50 pb-1 z-10">Nearby Results</h2>
-                <div id="poiResults" class="space-y-3">
-                    <p class="text-sm text-gray-500 italic" id="resultsStatus">Search to find places near you.</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Status Message Area (Replaces alert()) -->
-        <div id="statusMessage" class="mt-6 p-3 rounded-lg text-sm hidden" role="alert"></div>
         
     </div>
 
     <script>
-        let map;
+        // === CONFIGURATION ===
+        // !!! IMPORTANT: Replace this placeholder with your actual GraphHopper API key !!!
+        const GRAPHHOPPER_API_KEY = "YOUR_GRAPHHOPPER_API_KEY";
+        // =======================
+
+        // Global variables for Leaflet objects
+        let map = null;
         let userLocation = null;
         let userMarker = null;
-        let poiMarkers = [];
-        let routeLine = null;
+        let routingControl = null;
 
+        // DOM Elements
         const statusMessage = document.getElementById('statusMessage');
-        const poiResults = document.getElementById('poiResults');
-        const resultsStatus = document.getElementById('resultsStatus');
-        const startLocationDisplay = document.getElementById('startLocationDisplay');
 
-        // Hardcoded Mock POIs relative to a generic location
-        const mockPois = [
-            { id: 1, name: "Dunkin' Donuts (Mock 1)", address: "123 Main St", latOffset: 0.005, lngOffset: 0.008, distanceKm: 0 },
-            { id: 2, name: "Shell Gas Station (Mock)", address: "456 Highway Blvd", latOffset: -0.012, lngOffset: 0.003, distanceKm: 0 },
-            { id: 3, name: "Dunkin' Donuts (Mock 2)", address: "789 Local Ave", latOffset: 0.015, lngOffset: -0.005, distanceKm: 0 },
-            { id: 4, name: "KwikMart Gas (Mock)", address: "101 Cross Rd", latOffset: -0.008, lngOffset: -0.01, distanceKm: 0 },
-        ];
+        // --- Utility Functions ---
 
-
-        // Function to display messages in the UI (replaces alert())
         function showStatus(message, type = 'info') {
             statusMessage.textContent = message;
-            statusMessage.className = 'mt-6 p-3 rounded-lg text-sm';
-            statusMessage.classList.remove('hidden', 'bg-red-100', 'bg-green-100', 'text-red-700', 'text-green-700', 'bg-blue-100', 'text-blue-700');
+            statusMessage.className = 'mt-6 p-3 rounded-lg text-sm transition-all duration-300';
+            statusMessage.classList.remove('bg-red-100', 'bg-green-100', 'text-red-700', 'text-green-700', 'bg-blue-100', 'text-blue-700');
 
             if (type === 'error') {
                 statusMessage.classList.add('bg-red-100', 'text-red-700');
@@ -121,233 +97,137 @@
             } else {
                 statusMessage.classList.add('bg-blue-100', 'text-blue-700');
             }
-            // Show the message
-            statusMessage.classList.remove('hidden');
-
-            // Hide message after a few seconds
-            setTimeout(() => {
-                statusMessage.classList.add('hidden');
-            }, 5000);
         }
+        
+        // --- LEAFLET CORE FUNCTIONS ---
 
-        // Haversine formula to calculate straight-line distance in kilometers
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Radius of Earth in kilometers
-            const dLat = (lat2 - lat1) * (Math.PI / 180);
-            const dLon = (lon2 - lon1) * (Math.PI / 180);
-            const a = 
-                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c; // Distance in km
-        }
-
-
-        // 1. Initialize the Leaflet Map
+        /** * 1. Initializes the Leaflet map and OSM tile layer. 
+         */
         function initMap() {
-            // Default center location (e.g., New York City) until user location is found
-            const defaultCenter = [40.7128, -74.0060];
+            // Default center location (e.g., London, UK) until user location is found
+            const defaultCenter = [51.5074, 0.1278]; 
 
-            map = L.map('map').setView(defaultCenter, 12);
-
-            // Add OpenStreetMap tiles
+            if (map === null) {
+                map = L.map('map').setView(defaultCenter, 12);
+            } else {
+                map.setView(defaultCenter, 12);
+            }
+            
+            // Add OpenStreetMap (OSM) tile layer (Keyless, for background map)
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
             }).addTo(map);
 
-            // Start the process of getting the user's current location
             getUserLocation();
-
-            // Set up search event listener
-            document.getElementById('searchButton').addEventListener('click', performSearch);
-            document.getElementById('searchQuery').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') performSearch();
-            });
-
-            showStatus("Map initialized. Attempting to get your current location...", 'info');
         }
 
-        // 2. Get User's Current Geolocation
+        /**
+         * 2. Gets the user's current location via browser Geolocation.
+         */
         function getUserLocation() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        userLocation = {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude,
-                        };
+                        userLocation = [position.coords.latitude, position.coords.longitude];
                         
-                        map.setView([userLocation.lat, userLocation.lng], 14);
+                        map.setView(userLocation, 14);
                         
-                        // Create a custom red icon for the user location
-                        const userIcon = L.divIcon({
-                            className: 'user-marker-icon',
-                            html: '<div style="background-color: #f87171; width: 15px; height: 15px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 3px #f87171;"></div>',
-                            iconSize: [21, 21],
-                            iconAnchor: [10.5, 10.5]
-                        });
+                        if (userMarker) { map.removeLayer(userMarker); }
 
-                        // Add a marker for the current location
-                        userMarker = L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
-                            .addTo(map)
-                            .bindPopup("Your Current Location (Start)")
-                            .openPopup();
+                        // Add a subtle circular marker for the current location
+                        userMarker = L.circleMarker(userLocation, {
+                            radius: 8,
+                            fillColor: "#10b981", // Emerald green
+                            color: "#ffffff",
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 1
+                        }).addTo(map).bindPopup("Your Current Location (Start)").openPopup();
 
-
-                        showStatus("Current location found! Ready for search.", 'success');
-                        startLocationDisplay.textContent = `Starting Point (Current Location): Lat: ${userLocation.lat.toFixed(4)}, Lng: ${userLocation.lng.toFixed(4)}`;
-
-                        // Since we have the location, we can now initialize the search mock data
-                        initializeMockPois();
+                        showStatus("Current location found! Ready for GraphHopper routing.", 'success');
+                        
+                        initializeRoutingControl(userLocation);
                     },
                     (error) => {
                         console.error("Geolocation error:", error);
-                        showStatus("Error: The Geolocation service failed or access was denied. Using default center.", 'error');
-                        startLocationDisplay.textContent = 'Starting Point: Unknown (Please allow location access to set start)';
-                        userLocation = { lat: map.getCenter().lat, lng: map.getCenter().lng }; // Fallback
-                        initializeMockPois();
+                        showStatus("Error: Could not get your location. Using default map center.", 'error');
+                        userLocation = map.getCenter();
+                        initializeRoutingControl(userLocation);
                     }
                 );
             } else {
                 showStatus("Error: Your browser does not support Geolocation.", 'error');
-                userLocation = { lat: map.getCenter().lat, lng: map.getCenter().lng }; // Fallback
-                initializeMockPois();
+                userLocation = map.getCenter();
+                initializeRoutingControl(userLocation);
             }
+        }
+
+        /**
+         * 3. Initializes the Leaflet Routing Machine using the GraphHopper service.
+         */
+        function initializeRoutingControl(startLatLng) {
+            // FIX: The conditional check was corrupted. Resetting to the correct placeholder check.
+            if (GRAPHHOPPER_API_KEY === "ff9c5e0c-2e93-49c3-9df6-3ca877ebd23b" || !GRAPHHOPPER_API_KEY) {
+                showStatus("CRITICAL: GraphHopper API Key is missing. Routing will fail. Please update the key.", 'error');
+                return;
+            }
+
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+
+            const startWaypoint = L.latLng(startLatLng[0], startLatLng[1]);
+
+            routingControl = L.Routing.control({
+                waypoints: [
+                    startWaypoint, 
+                    // Destination waypoint will be added by the user input
+                ],
+                // === GRAPH HOPPER ROUTER CONFIGURATION ===
+                router: L.Routing.graphHopper(GRAPHHOPPER_API_KEY, {
+                    url: 'https://graphhopper.com/api/1/route',
+                    profile: 'driving-car' // or 'bike', 'foot', etc.
+                }),
+                // =========================================
+                routeWhileDragging: true,
+                show: true,
+                language: 'en',
+                altLineOptions: {
+                    styles: [
+                        {color: 'black', opacity: 0.15, weight: 9},
+                        {color: 'white', opacity: 0.8, weight: 6},
+                        {color: '#10b981', opacity: 0.6, weight: 3} // Emerald route line
+                    ]
+                },
+                placeholder: "Enter destination address or click map...",
+            }).addTo(map);
+
+            routingControl.on('routesfound', (e) => {
+                const routes = e.routes;
+                const summary = routes[0].summary;
+                
+                // Format distance and time nicely
+                const distanceKm = (summary.totalDistance / 1000).toFixed(2);
+                const timeMinutes = Math.round(summary.totalTime / 60);
+
+                showStatus(
+                    `GraphHopper Route calculated: Total distance is ${distanceKm} km, estimated travel time is ${timeMinutes} minutes.`, 
+                    'success'
+                );
+            });
+            
+            routingControl.on('routingerror', (e) => {
+                // Common errors include invalid API key or locations not found/reachable
+                console.error("GraphHopper Routing Error:", e);
+                showStatus("Routing failed. Check your API key and ensure the location is valid and accessible.", 'error');
+            });
         }
         
-        // 3. Attach coordinates and distances to mock POIs
-        function initializeMockPois() {
-            // Apply the offsets to the determined userLocation or fallback location
-            mockPois.forEach(poi => {
-                poi.lat = userLocation.lat + poi.latOffset;
-                poi.lng = userLocation.lng + poi.lngOffset;
-                // Calculate distance from user to POI
-                poi.distanceKm = calculateDistance(userLocation.lat, userLocation.lng, poi.lat, poi.lng).toFixed(2);
-            });
-        }
+        // Start the map initialization once the page loads
+        document.addEventListener('DOMContentLoaded', initMap);
 
-
-        // 4. Simulated Search for nearby POIs
-        function performSearch() {
-            const query = document.getElementById('searchQuery').value.trim().toLowerCase();
-            if (!query) {
-                showStatus("Please enter a search query (e.g., 'Dunkin Donuts').", 'error');
-                return;
-            }
-            
-            if (!userLocation) {
-                showStatus("Waiting for your current location...", 'info');
-                return;
-            }
-
-            // Clear previous results, markers, and route
-            poiResults.innerHTML = '';
-            resultsStatus.textContent = "Searching (Simulated)...";
-            clearPoiMarkers();
-            clearRoute();
-
-            // Filter the mock POIs based on the query (simulating search results)
-            const results = mockPois
-                .filter(poi => poi.name.toLowerCase().includes(query) || query.includes("gas") && poi.name.toLowerCase().includes("gas"))
-                .sort((a, b) => a.distanceKm - b.distanceKm); // Sort by distance (closest first)
-
-            if (results.length > 0) {
-                resultsStatus.textContent = `${results.length} simulated results found. Select one to see the straight-line route.`;
-                
-                results.forEach(place => {
-                    createPoiMarker(place);
-                    addPoiToSidebar(place);
-                });
-                
-                // Adjust map bounds to include all POIs and the user location
-                const latLngs = results.map(p => [p.lat, p.lng]);
-                latLngs.push([userLocation.lat, userLocation.lng]);
-                map.fitBounds(latLngs, { padding: [50, 50] }); // Pad for visual comfort
-
-                showStatus(`Simulated search for "${query}" complete.`, 'success');
-
-            } else {
-                resultsStatus.textContent = "No simulated results match your query.";
-                showStatus(`No mock results found for "${query}".`, 'info');
-            }
-        }
-        
-        // Helper to clear POI markers
-        function clearPoiMarkers() {
-            poiMarkers.forEach(marker => map.removeLayer(marker));
-            poiMarkers = [];
-        }
-
-        // Helper to clear the drawn route
-        function clearRoute() {
-            if (routeLine) {
-                map.removeLayer(routeLine);
-                routeLine = null;
-            }
-        }
-
-
-        // 5. Create a Marker for a POI result
-        function createPoiMarker(place) {
-             // Use default Leaflet marker icon
-            const marker = L.marker([place.lat, place.lng])
-                .addTo(map)
-                .bindPopup(`<b>${place.name}</b><br>Distance: ${place.distanceKm} km (Simulated)`);
-            
-            poiMarkers.push(marker); // Keep track of POI markers
-
-            marker.on('click', () => {
-                calculateAndDisplayRoute(place);
-            });
-        }
-
-        // 6. Add POI result to the sidebar
-        function addPoiToSidebar(place) {
-            const resultItem = document.createElement('div');
-            resultItem.className = 'p-3 bg-white rounded-lg border hover:bg-blue-50 cursor-pointer transition';
-            resultItem.innerHTML = `
-                <p class="font-semibold text-gray-900">${place.name}</p>
-                <p class="text-xs text-gray-600">${place.address}</p>
-                <p class="text-sm font-medium text-gray-700 mt-1">~${place.distanceKm} km away</p>
-                <button data-id="${place.id}" class="mt-2 text-blue-500 hover:text-blue-700 text-xs font-medium focus:outline-none">
-                    Simulate Route Here
-                </button>
-            `;
-            
-            resultItem.querySelector('button').addEventListener('click', () => {
-                calculateAndDisplayRoute(place);
-            });
-
-            poiResults.appendChild(resultItem);
-        }
-
-        // 7. Calculate and Display the SIMULATED Route (Straight Line)
-        function calculateAndDisplayRoute(destinationPlace) {
-            if (!userLocation) {
-                showStatus("Cannot calculate route: Current location is unknown.", 'error');
-                return;
-            }
-
-            clearRoute(); // Clear previous simulated route
-            
-            showStatus(`Drawing simulated straight-line route to ${destinationPlace.name}...`, 'info');
-
-            const latLngs = [
-                [userLocation.lat, userLocation.lng],
-                [destinationPlace.lat, destinationPlace.lng]
-            ];
-            
-            routeLine = L.polyline(latLngs, { color: 'red', weight: 5, dashArray: '10, 5' }).addTo(map);
-
-            // Zoom the map to fit the route
-            map.fitBounds(routeLine.getBounds());
-
-            showStatus(`Simulated route found: Straight line distance is ${destinationPlace.distanceKm} km to ${destinationPlace.name}.`, 'success');
-        }
-
-        // Start the map initialization process when the script loads
-        initMap();
-
-    </script>
+    </script> const GRAPHHOPPER_API_KEY = "YOUR_GRAPHHOPPER_API_KEY_HERE"; 
+    with your actual key from your `.env` file.
 </body>
 </html>
