@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gas Price Optimization and Routing</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Load Mapbox GL JS -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
+
+    <style>
+        /* Custom CSS to ensure the map fills the container and screen */
+        #map {
+            width: 100%;
+            height: 80vh; 
+            border-radius: 0.75rem; 
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style for the custom User Marker (Blue Circle) */
+        .user-marker {
+            width: 24px;
+            height: 24px;
+            background-color: #3b82f6; /* Blue-500 */
+            border-radius: 50%;
+            border: 3px solid #ffffff;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5); /* Blue glow */
+            cursor: pointer;
+        }
+        /* Style for the Gas Station Marker (Red Circle with Price Snippet) */
+        .station-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            background-color: #ef4444; /* Red-500 */
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            font-size: 11px; /* Smaller font for price */
+            color: white;
+            font-weight: bold;
+            line-height: 1;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            cursor: pointer;
+            padding-top: 2px; 
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .station-marker.optimal {
+            background-color: #10B981; /* Emerald Green for optimal */
+            box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.7); 
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 sm:p-8">
+
+    <!-- Application Container -->
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Fuel Optimization System</h1>
+            <p class="text-sm text-gray-500 mt-1">Optimization Goal: Minimize **(Fuel Price + Travel Cost)**.</p>
+        </header>
+
+        <!-- Status Message Box -->
+        <div id="status-message" class="mb-6 p-3 bg-yellow-100 text-yellow-800 rounded-lg text-sm font-medium">
+            Attempting to find your location... (Please allow location access in your browser).
+        </div>
+
+        <!-- Optimization Result Card -->
+        <div id="optimization-result" class="mb-6 p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-lg hidden">
+            <h3 class="text-lg font-semibold text-emerald-800">Optimal Station Found!</h3>
+            <p class="text-sm text-emerald-600">Route cost and station will be highlighted on the map.</p>
+            <p id="optimal-station-info" class="font-bold text-emerald-900 mt-1"></p>
+        </div>
+
+        <!-- Map Container -->
+        <div id="map" class="shadow-lg">
+            <!-- The map will be rendered here -->
+        </div>
+        
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION ---
+        // NOTE: A public access token is used here for demonstration. 
+        mapboxgl.accessToken = 'pk.eyJ1IjoidXNtYW5jaCIsImEiOiJjbWk5anZ5MTEwcGRpMmxwdjNpNTJmNWJkIn0.6TkjSZTrX_D4xgm1YRGPrg'; 
+        
+        // This is a cost-per-mile factor to convert distance into a comparable dollar value.
+        // E.g., if it costs $0.60 to drive 1 mile, we use 0.60 as the factor.
+        const COST_PER_MILE_FACTOR = 0.60; 
+        const EARTH_RADIUS_MILES = 3958.8;
+        
+        const initialCenter = [-83.0458, 42.3314]; // Default: Detroit, Michigan
+        const initialZoom = 12;
+
+        let userLngLat = initialCenter; // Stores the user's current or default location
+        let allMarkers = []; // To store Mapbox marker instances for easy removal/updating
+
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: initialCenter, 
+            zoom: initialZoom, 
+            pitch: 45
+        });
+
+        // Mock data set for gas stations
+        const mockGasStations = [
+            // Coordinates near the default Detroit center
+            { name: "QuickFuel Station A", price: 3.45, lng: -83.055, lat: 42.341, id: 1 }, // A bit cheaper, slightly farther
+            { name: "BestValue Gas B", price: 3.29, lng: -83.025, lat: 42.311, id: 2 }, // Cheapest, farthest
+            { name: "Premium Fuel C", price: 3.59, lng: -83.040, lat: 42.330, id: 3 }, // Most expensive, closest
+            { name: "Corner Stop D", price: 3.40, lng: -83.048, lat: 42.333, id: 4 }, // Moderate price, moderate distance
+        ];
+
+        // --- 2. UTILITY FUNCTIONS ---
+        function updateStatus(message, type = 'yellow') {
+            const statusDiv = document.getElementById('status-message');
+            let className = 'mb-6 p-3 rounded-lg text-sm font-medium ';
+            
+            if (type === 'green') {
+                className += 'bg-green-100 text-green-800';
+            } else if (type === 'red') {
+                className += 'bg-red-100 text-red-800';
+            } else { 
+                className += 'bg-yellow-100 text-yellow-800';
+            }
+
+            statusDiv.className = className;
+            statusDiv.textContent = message;
+        }
+
+        // Calculates the distance between two lat/lng points using the Haversine formula (in miles)
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = EARTH_RADIUS_MILES; 
+            const dLat = (lat2 - lat1) * (Math.PI / 180);
+            const dLon = (lon2 - lon1) * (Math.PI / 180);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        // --- 3. PLOTTING FUNCTIONS ---
+        
+        // Remove all markers (gas stations and user) and routes from the map
+        function clearMap() {
+            allMarkers.forEach(marker => marker.remove());
+            allMarkers = [];
+
+            // Remove the route line if it exists
+            if (map.getLayer('route')) {
+                map.removeLayer('route');
+            }
+            if (map.getSource('route')) {
+                map.removeSource('route');
+            }
+        }
+
+        // Plots the user's current location marker
+        function plotUserMarker(lngLat) {
+            const markerElement = document.createElement('div');
+            markerElement.className = 'user-marker';
+
+            const userMarker = new mapboxgl.Marker(markerElement)
+                .setLngLat(lngLat)
+                .setPopup(new mapboxgl.Popup({ offset: 25 })
+                    .setHTML("<h3>Your Location</h3>"))
+                .addTo(map);
+
+            allMarkers.push(userMarker);
+        }
+
+        // Plots all the gas stations from the provided data
+        function plotGasStations(stations) {
+            clearMap(); // Start fresh
+            plotUserMarker(userLngLat); // Re-plot user marker
+
+            stations.forEach(station => {
+                const markerElement = document.createElement('div');
+                markerElement.className = 'station-marker';
+                
+                // Display the cents portion of the price
+                const cents = Math.round((station.price % 1) * 100);
+                markerElement.textContent = `.${cents}`; 
+
+                // Detailed popup content
+                const popupContent = `
+                    <div class="p-1">
+                        <h4 class="font-bold text-gray-800">${station.name}</h4>
+                        <p class="text-xl text-red-600 font-extrabold">Price: $${station.price.toFixed(2)}</p>
+                        <p class="text-sm text-gray-500 mt-1">Click station to calculate route cost.</p>
+                    </div>
+                `;
+
+                const marker = new mapboxgl.Marker(markerElement)
+                    .setLngLat([station.lng, station.lat])
+                    .setPopup(new mapboxgl.Popup({ offset: 25 })
+                        .setHTML(popupContent))
+                    .addTo(map);
+
+                allMarkers.push(marker);
+            });
+            return stations.length;
+        }
+
+        // Draws a simple straight line (Haversine route) on the map
+        function drawRoute(startLngLat, endLngLat) {
+            // Remove previous route if exists
+            if (map.getLayer('route')) {
+                map.removeLayer('route');
+                map.removeSource('route');
+            }
+
+            map.addSource('route', {
+                'type': 'geojson',
+                'data': {
+                    'type': 'Feature',
+                    'properties': {},
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': [startLngLat, endLngLat]
+                    }
+                }
+            });
+
+            map.addLayer({
+                'id': 'route',
+                'type': 'line',
+                'source': 'route',
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': '#10B981', // Emerald green
+                    'line-width': 6,
+                    'line-dasharray': [2, 1]
+                }
+            });
+        }
+        
+        // --- 4. OPTIMIZATION LOGIC (The Core "Dijkstra's" equivalent) ---
+        
+        function calculateOptimalStation(userLat, userLng, stations) {
+            let bestStation = null;
+            let minTotalCost = Infinity;
+
+            // Iterate over all gas stations to calculate the optimized cost
+            const stationsWithCost = stations.map(station => {
+                // 1. Calculate Travel Distance
+                const distanceMiles = haversineDistance(userLat, userLng, station.lat, station.lng);
+
+                // 2. Calculate Travel Cost (Distance * Cost_Per_Mile)
+                const travelCost = distanceMiles * COST_PER_MILE_FACTOR;
+
+                // 3. Calculate Total Optimized Cost (Fuel Price + Travel Cost)
+                const totalCost = station.price + travelCost;
+
+                return {
+                    ...station,
+                    distance: distanceMiles,
+                    travelCost: travelCost,
+                    totalCost: totalCost
+                };
+            });
+
+            // Find the station with the minimum total cost
+            stationsWithCost.forEach(station => {
+                if (station.totalCost < minTotalCost) {
+                    minTotalCost = station.totalCost;
+                    bestStation = station;
+                }
+            });
+
+            return bestStation;
+        }
+
+        function runOptimizationAndDraw() {
+            // 1. Calculate optimal station
+            const optimalStation = calculateOptimalStation(userLngLat[1], userLngLat[0], mockGasStations);
+
+            // 2. Highlight the optimal station marker
+            allMarkers.forEach(marker => {
+                const element = marker.getElement();
+                element.classList.remove('optimal');
+            });
+            
+            const optimalMarker = allMarkers.find(marker => {
+                 // Mapbox markers don't directly store the station data, so we check location
+                 const lngLat = marker.getLngLat();
+                 return lngLat.lng === optimalStation.lng && lngLat.lat === optimalStation.lat;
+            });
+            
+            if (optimalMarker) {
+                optimalMarker.getElement().classList.add('optimal');
+            }
+
+            // 3. Draw the route
+            const endLngLat = [optimalStation.lng, optimalStation.lat];
+            drawRoute(userLngLat, endLngLat);
+            
+            // 4. Update the result UI
+            const resultDiv = document.getElementById('optimization-result');
+            const infoP = document.getElementById('optimal-station-info');
+
+            infoP.innerHTML = `
+                ${optimalStation.name} | Price: <strong>$${optimalStation.price.toFixed(2)}</strong><br>
+                Distance: ${optimalStation.distance.toFixed(2)} miles | 
+                Travel Cost: $${optimalStation.travelCost.toFixed(2)}<br>
+                <span class="text-xl">Total Optimized Cost: <strong>$${optimalStation.totalCost.toFixed(2)}</strong></span>
+            `;
+            resultDiv.classList.remove('hidden');
+            
+            map.flyTo({
+                center: endLngLat,
+                zoom: 13,
+                essential: true 
+            });
+
+            updateStatus(`Optimization complete. The best station is ${optimalStation.name}.`, 'green');
+        }
+
+
+        // --- 5. MAIN LOCATION LOGIC ---
+        function getUserLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        userLngLat = [position.coords.longitude, position.coords.latitude];
+                        
+                        map.setCenter(userLngLat);
+                        map.setZoom(14); 
+
+                        // Plot markers and run the optimization immediately
+                        const plottedCount = plotGasStations(mockGasStations);
+                        runOptimizationAndDraw();
+
+                        updateStatus(`Found your location. Analyzing ${plottedCount} gas stations for optimal cost.`, 'green');
+                    },
+                    (error) => {
+                        // Handle Geolocation errors
+                        let errorMessage = "Could not get your location. Displaying default center (Detroit).";
+                        
+                        // Default to initial center and run the analysis anyway
+                        userLngLat = initialCenter; 
+                        const plottedCount = plotGasStations(mockGasStations);
+                        runOptimizationAndDraw();
+                        
+                        updateStatus(`${errorMessage} Running optimization from default location.`, 'red');
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                // If browser doesn't support geolocation
+                userLngLat = initialCenter;
+                const plottedCount = plotGasStations(mockGasStations);
+                runOptimizationAndDraw();
+                updateStatus(`Geolocation is not supported by your browser. Running optimization from default location.`, 'red');
+            }
+        }
+
+
+        // --- 6. INITIALIZATION ---
+        map.on('load', () => {
+            getUserLocation();
+        });
+
+        // Error handler for Mapbox initialization failure
+        map.on('error', (e) => {
+             console.error('Map loading error:', e);
+             updateStatus('ERROR: Map experienced a loading issue. Check console for details.', 'red');
+        });
+    </script>
+</body>
+</html>

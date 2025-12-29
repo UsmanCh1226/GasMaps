@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet Real Road Routing with GraphHopper</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS and JS (Core Map Library) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/SVRMgfkQRRI+5TvE="
+        crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20n6a958TTD08xU51Wp8r9S4b1CiG17g7rwh09hWkZJ1s="
+        crossorigin=""></script>
+
+    <!-- Leaflet Routing Machine CSS and JS (For Road Routing) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+    <style>
+        /* Custom styles for 'Inter' font and map container */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .container-card {
+            box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #map {
+            height: 60vh; 
+            min-height: 400px;
+            width: 100%;
+            border-radius: 0.5rem; 
+            z-index: 1; 
+        }
+        /* Style for the Leaflet Routing Machine control */
+        .leaflet-routing-container {
+            font-family: 'Inter', sans-serif;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            padding: 1rem;
+            background-color: white;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 sm:p-8">
+    
+    <div class="w-full max-w-4xl mt-4 bg-white rounded-xl p-6 sm:p-8 container-card">
+        <h1 class="text-3xl font-extrabold text-gray-900 mb-4 border-b pb-3">
+            Leaflet Routing with GraphHopper
+        </h1>
+        <p class="text-red-700 font-semibold mb-6 p-2 bg-red-50 rounded-lg">
+            ⚠️ **ACTION REQUIRED:** You must replace `"YOUR_GRAPHHOPPER_API_KEY"` in the JavaScript code below with your actual free GraphHopper API key for the routing to work.
+        </p>
+        <p class="text-gray-600 mb-6">
+            We are finding your current location (Start). Use the control panel on the map to enter a Destination and calculate the driving route using GraphHopper's powerful service.
+        </p>
+
+        <!-- Map Container -->
+        <div id="map" class="mb-6"></div>
+
+        <!-- Status Message Area -->
+        <div id="statusMessage" class="p-3 rounded-lg text-sm bg-blue-100 text-blue-700" role="alert">
+            Initializing map and finding your location...
+        </div>
+        
+    </div>
+
+    <script>
+        // === CONFIGURATION ===
+        // !!! IMPORTANT: Replace this placeholder with your actual GraphHopper API key !!!
+        const GRAPHHOPPER_API_KEY = "YOUR_GRAPHHOPPER_API_KEY";
+        // =======================
+
+        // Global variables for Leaflet objects
+        let map = null;
+        let userLocation = null;
+        let userMarker = null;
+        let routingControl = null;
+
+        // DOM Elements
+        const statusMessage = document.getElementById('statusMessage');
+
+        // --- Utility Functions ---
+
+        function showStatus(message, type = 'info') {
+            statusMessage.textContent = message;
+            statusMessage.className = 'mt-6 p-3 rounded-lg text-sm transition-all duration-300';
+            statusMessage.classList.remove('bg-red-100', 'bg-green-100', 'text-red-700', 'text-green-700', 'bg-blue-100', 'text-blue-700');
+
+            if (type === 'error') {
+                statusMessage.classList.add('bg-red-100', 'text-red-700');
+            } else if (type === 'success') {
+                statusMessage.classList.add('bg-green-100', 'text-green-700');
+            } else {
+                statusMessage.classList.add('bg-blue-100', 'text-blue-700');
+            }
+        }
+        
+        // --- LEAFLET CORE FUNCTIONS ---
+
+        /** * 1. Initializes the Leaflet map and OSM tile layer. 
+         */
+        function initMap() {
+            // Default center location (e.g., London, UK) until user location is found
+            const defaultCenter = [51.5074, 0.1278]; 
+
+            if (map === null) {
+                map = L.map('map').setView(defaultCenter, 12);
+            } else {
+                map.setView(defaultCenter, 12);
+            }
+            
+            // Add OpenStreetMap (OSM) tile layer (Keyless, for background map)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            getUserLocation();
+        }
+
+        /**
+         * 2. Gets the user's current location via browser Geolocation.
+         */
+        function getUserLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        userLocation = [position.coords.latitude, position.coords.longitude];
+                        
+                        map.setView(userLocation, 14);
+                        
+                        if (userMarker) { map.removeLayer(userMarker); }
+
+                        // Add a subtle circular marker for the current location
+                        userMarker = L.circleMarker(userLocation, {
+                            radius: 8,
+                            fillColor: "#10b981", // Emerald green
+                            color: "#ffffff",
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 1
+                        }).addTo(map).bindPopup("Your Current Location (Start)").openPopup();
+
+                        showStatus("Current location found! Ready for GraphHopper routing.", 'success');
+                        
+                        initializeRoutingControl(userLocation);
+                    },
+                    (error) => {
+                        console.error("Geolocation error:", error);
+                        showStatus("Error: Could not get your location. Using default map center.", 'error');
+                        userLocation = map.getCenter();
+                        initializeRoutingControl(userLocation);
+                    }
+                );
+            } else {
+                showStatus("Error: Your browser does not support Geolocation.", 'error');
+                userLocation = map.getCenter();
+                initializeRoutingControl(userLocation);
+            }
+        }
+
+        /**
+         * 3. Initializes the Leaflet Routing Machine using the GraphHopper service.
+         */
+        function initializeRoutingControl(startLatLng) {
+            // FIX: The conditional check was corrupted. Resetting to the correct placeholder check.
+            if (GRAPHHOPPER_API_KEY === "ff9c5e0c-2e93-49c3-9df6-3ca877ebd23b" || !GRAPHHOPPER_API_KEY) {
+                showStatus("CRITICAL: GraphHopper API Key is missing. Routing will fail. Please update the key.", 'error');
+                return;
+            }
+
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+
+            const startWaypoint = L.latLng(startLatLng[0], startLatLng[1]);
+
+            routingControl = L.Routing.control({
+                waypoints: [
+                    startWaypoint, 
+                    // Destination waypoint will be added by the user input
+                ],
+                // === GRAPH HOPPER ROUTER CONFIGURATION ===
+                router: L.Routing.graphHopper(GRAPHHOPPER_API_KEY, {
+                    url: 'https://graphhopper.com/api/1/route',
+                    profile: 'driving-car' // or 'bike', 'foot', etc.
+                }),
+                // =========================================
+                routeWhileDragging: true,
+                show: true,
+                language: 'en',
+                altLineOptions: {
+                    styles: [
+                        {color: 'black', opacity: 0.15, weight: 9},
+                        {color: 'white', opacity: 0.8, weight: 6},
+                        {color: '#10b981', opacity: 0.6, weight: 3} // Emerald route line
+                    ]
+                },
+                placeholder: "Enter destination address or click map...",
+            }).addTo(map);
+
+            routingControl.on('routesfound', (e) => {
+                const routes = e.routes;
+                const summary = routes[0].summary;
+                
+                // Format distance and time nicely
+                const distanceKm = (summary.totalDistance / 1000).toFixed(2);
+                const timeMinutes = Math.round(summary.totalTime / 60);
+
+                showStatus(
+                    `GraphHopper Route calculated: Total distance is ${distanceKm} km, estimated travel time is ${timeMinutes} minutes.`, 
+                    'success'
+                );
+            });
+            
+            routingControl.on('routingerror', (e) => {
+                // Common errors include invalid API key or locations not found/reachable
+                console.error("GraphHopper Routing Error:", e);
+                showStatus("Routing failed. Check your API key and ensure the location is valid and accessible.", 'error');
+            });
+        }
+        
+        // Start the map initialization once the page loads
+        document.addEventListener('DOMContentLoaded', initMap);
+
+    </script> const GRAPHHOPPER_API_KEY = "YOUR_GRAPHHOPPER_API_KEY_HERE"; 
+    with your actual key from your `.env` file.
+</body>
+</html>
